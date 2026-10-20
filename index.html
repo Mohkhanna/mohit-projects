@@ -1,0 +1,892 @@
+<meta charset="utf-8">
+<title>Sandbox Database</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: full-height workbench — explorer (left) beside tabbed query editor / table viewer, status bar below */
+:root {
+  --bg: #f1f4f7; --panel: #ffffff; --sunk: #eef1f4; --ink: #16202b; --muted: #5a6778; --line: #d9dfe6;
+  --accent: #0b7480; --accent-ink: #ffffff; --accent-soft: #dff0f1;
+  --ok: #1d7a45; --ok-soft: #e1f3e8; --err: #b3322a; --err-soft: #fbe6e4; --warn: #9a6a00; --null: #8c98a8;
+  --syn-k: #7b3fc4; --syn-s: #1d7a45; --syn-n: #b05a00; --syn-c: #8c98a8; --syn-id: #0b6b9c;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1318; --panel: #151c23; --sunk: #10161c; --ink: #e2e8ee; --muted: #8d9aaa; --line: #26313c;
+    --accent: #43c0c9; --accent-ink: #062226; --accent-soft: #123338;
+    --ok: #5ccf8a; --ok-soft: #12301f; --err: #f07a70; --err-soft: #3a1714; --warn: #e0b14a; --null: #5d6a78;
+    --syn-k: #c39bff; --syn-s: #7fd99e; --syn-n: #f0b06a; --syn-c: #5d6a78; --syn-id: #6cc4f0;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1318; --panel: #151c23; --sunk: #10161c; --ink: #e2e8ee; --muted: #8d9aaa; --line: #26313c;
+  --accent: #43c0c9; --accent-ink: #062226; --accent-soft: #123338;
+  --ok: #5ccf8a; --ok-soft: #12301f; --err: #f07a70; --err-soft: #3a1714; --warn: #e0b14a; --null: #5d6a78;
+  --syn-k: #c39bff; --syn-s: #7fd99e; --syn-n: #f0b06a; --syn-c: #5d6a78; --syn-id: #6cc4f0;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 10px; display: flex; flex-direction: column; gap: 10px;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.btn { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 5px 11px; font-weight: 500; white-space: nowrap; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.sm { padding: 2px 8px; font-size: 12px; }
+.btn.danger { color: var(--err); }
+.btn[disabled] { opacity: .5; cursor: default; }
+input[type=text], input[type=number], select, textarea.field { border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; background: var(--sunk); min-width: 0; }
+
+.bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.brand { font-family: var(--font-display); font-weight: 700; font-size: 19px; display: flex; align-items: center; gap: 8px; margin-right: 6px; }
+.brand b { font-family: var(--font-mono); font-size: 11px; font-weight: 500; background: var(--accent); color: var(--accent-ink); padding: 2px 6px; border-radius: 4px; }
+.bar .grow { flex: 1; }
+#toggle-explorer { display: none; }
+
+.wb { flex: 1; min-height: 0; display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 10px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; min-width: 0; min-height: 0; }
+
+/* explorer */
+.explorer { display: flex; flex-direction: column; overflow: hidden; }
+.ex-head { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.ex-head .grow { flex: 1; }
+.ex-filter { padding: 8px 10px 0; }
+.ex-filter input { width: 100%; }
+#tree { overflow: auto; padding: 8px 6px 10px; flex: 1; }
+.grp { padding: 8px 6px 4px; }
+.node { border-radius: 6px; }
+.node-row { display: flex; align-items: center; gap: 2px; border-radius: 6px; }
+.node-row:hover { background: var(--sunk); }
+.node-row.cur { background: var(--accent-soft); }
+.chev { background: none; border: 0; width: 22px; height: 24px; color: var(--muted); font-size: 11px; padding: 0; flex: none; }
+.node-name { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 3px 4px; font-family: var(--font-mono); font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node-n { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; padding-right: 6px; }
+.node-body { margin: 0 0 6px 24px; padding-left: 8px; border-left: 1px solid var(--line); }
+.col-row { display: flex; justify-content: space-between; gap: 8px; width: 100%; background: none; border: 0; text-align: left; padding: 1px 4px; font-family: var(--font-mono); font-size: 12px; border-radius: 4px; }
+.col-row:hover { background: var(--sunk); }
+.col-row .t { color: var(--muted); }
+.col-row .pk { color: var(--accent); }
+.node-acts { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 0 6px; }
+.empty-ex { padding: 14px 12px; color: var(--muted); font-size: 13px; }
+
+/* main */
+.main { display: flex; flex-direction: column; overflow: hidden; }
+.tabstrip { display: flex; align-items: stretch; border-bottom: 1px solid var(--line); background: var(--sunk); overflow-x: auto; flex: none; }
+.tab { display: flex; align-items: center; gap: 6px; padding: 0 4px 0 12px; border-right: 1px solid var(--line); background: none; border-top: 0; border-left: 0; border-bottom: 2px solid transparent; font-size: 13px; color: var(--muted); white-space: nowrap; }
+.tab[aria-selected="true"] { background: var(--panel); color: var(--ink); border-bottom-color: var(--accent); }
+.tab .ttl { background: none; border: 0; padding: 8px 0; }
+.tab .ico { font-family: var(--font-mono); font-size: 11px; color: var(--accent); }
+.tab .x { background: none; border: 0; color: var(--muted); width: 22px; height: 22px; border-radius: 4px; line-height: 1; }
+.tab .x:hover { background: var(--line); color: var(--ink); }
+.tab-add { background: none; border: 0; padding: 0 12px; font-size: 17px; color: var(--muted); }
+.view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.qbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 7px 10px; border-bottom: 1px solid var(--line); flex: none; }
+.qbar .grow { flex: 1; }
+.kbd { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
+
+/* editor */
+.edwrap { display: flex; background: var(--sunk); flex: 0 0 var(--edh, 340px); min-height: 90px; overflow: hidden; }
+.gutter { font: 13.5px/21px var(--font-mono); color: var(--null); text-align: right; padding: 10px 8px 10px 12px; user-select: none; white-space: pre; border-right: 1px solid var(--line); overflow: hidden; flex: none; }
+.code { position: relative; flex: 1; min-width: 0; }
+.code pre, .code textarea { margin: 0; padding: 10px 12px; font: 13.5px/21px var(--font-mono); white-space: pre; tab-size: 2; letter-spacing: 0; border: 0; }
+.code pre { position: absolute; inset: 0; overflow: hidden; pointer-events: none; color: var(--ink); }
+.code textarea { position: absolute; inset: 0; width: 100%; height: 100%; background: transparent; color: transparent; caret-color: var(--ink); resize: none; outline: none; overflow: auto; }
+.code textarea::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+.code i { font-style: normal; }
+.code .k { color: var(--syn-k); font-weight: 500; } .code .s { color: var(--syn-s); } .code .n { color: var(--syn-n); } .code .c { color: var(--syn-c); } .code .id { color: var(--syn-id); }
+.split { height: 7px; background: var(--sunk); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); cursor: row-resize; flex: none; touch-action: none; }
+.split:hover, .split.drag { background: var(--accent-soft); }
+.out { flex: 1; min-height: 100px; display: flex; flex-direction: column; }
+.outtabs { display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--line); flex: none; flex-wrap: wrap; }
+.outtabs .pill { background: none; border: 0; border-radius: 12px; padding: 2px 10px; color: var(--muted); font-weight: 500; font-size: 13px; }
+.outtabs .pill[aria-selected="true"] { background: var(--accent-soft); color: var(--ink); }
+.outtabs .grow { flex: 1; }
+.meta { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.outbody { flex: 1; overflow: auto; min-height: 0; }
+.empty { padding: 26px; color: var(--muted); text-align: center; }
+
+table.grid { border-collapse: collapse; font: 12.5px var(--font-mono); font-variant-numeric: tabular-nums; width: max-content; min-width: 100%; }
+.grid th, .grid td { padding: 4px 12px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; max-width: 380px; overflow: hidden; text-overflow: ellipsis; }
+.grid th { position: sticky; top: 0; background: var(--panel); font-weight: 500; color: var(--muted); z-index: 1; user-select: none; }
+.grid th.sortable { cursor: pointer; } .grid th.sortable:hover { color: var(--ink); }
+.grid td.num { text-align: right; }
+.grid .nul { color: var(--null); font-style: italic; }
+.grid tr:hover td { background: var(--sunk); }
+.grid td.edit { cursor: cell; }
+.grid td input { width: 100%; min-width: 120px; font: inherit; padding: 1px 4px; border: 1px solid var(--accent); border-radius: 3px; background: var(--panel); }
+.grid .rn { color: var(--null); text-align: right; width: 1%; padding-right: 6px; }
+.grid .del { background: none; border: 0; color: var(--null); padding: 0 4px; border-radius: 4px; }
+.grid .del:hover { color: var(--err); background: var(--err-soft); }
+.grid tr.ins td { background: var(--accent-soft); }
+.grid tr.ins input { width: 100%; min-width: 90px; font: inherit; padding: 2px 5px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); }
+.msgs { padding: 8px 12px; display: flex; flex-direction: column; gap: 4px; font: 12.5px var(--font-mono); }
+.msgs .ok { color: var(--ok); } .msgs .err { color: var(--err); background: var(--err-soft); padding: 6px 8px; border-radius: 6px; white-space: pre-wrap; } .msgs .t { color: var(--muted); }
+.rs-cap { padding: 6px 12px; font-size: 12px; color: var(--muted); background: var(--sunk); border-bottom: 1px solid var(--line); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist { list-style: none; margin: 0; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.hist button { width: 100%; text-align: left; font: 12px var(--font-mono); background: var(--sunk); border: 1px solid var(--line); border-radius: 5px; padding: 5px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* table view */
+.tv-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border-bottom: 1px solid var(--line); flex: none; }
+.tv-head h2 { margin: 0; font: 600 15px var(--font-mono); }
+.badge { font-size: 11px; border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; color: var(--muted); }
+.tv-head .grow { flex: 1; }
+.tv-body { flex: 1; overflow: auto; min-height: 0; }
+.tv-foot { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--line); flex: none; }
+.sec { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--line); }
+.sec h3 { margin: 0; }
+.sec pre { margin: 0; font: 12.5px/1.5 var(--font-mono); background: var(--sunk); padding: 10px; border-radius: 6px; overflow: auto; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.note { color: var(--muted); font-size: 12.5px; margin: 0; }
+
+footer.status { display: flex; gap: 14px; flex-wrap: wrap; font: 12px var(--font-mono); color: var(--muted); flex: none; }
+footer.status .grow { flex: 1; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin-right: 6px; }
+
+/* dialogs */
+.modal { position: fixed; inset: 0; background: rgba(8, 12, 16, .55); display: grid; place-items: center; padding: 16px; z-index: 50; }
+.dlg { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; width: min(720px, 100%); max-height: 90vh; display: flex; flex-direction: column; }
+.dlg-h { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.dlg-h h2 { margin: 0; font: 700 17px var(--font-display); }
+.dlg-h .x { background: none; border: 0; font-size: 20px; color: var(--muted); }
+.dlg-b { padding: 14px 16px 16px; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
+.dlg label.l { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+.desg { width: 100%; border-collapse: collapse; font-size: 13px; }
+.desg th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 2px 4px; font-weight: 600; }
+.desg td { padding: 3px 4px; }
+.desg input[type=text], .desg select { width: 100%; font-family: var(--font-mono); font-size: 12.5px; }
+.dlg-scroll { overflow-x: auto; }
+.drop { border: 1.5px dashed var(--line); border-radius: 8px; padding: 18px; text-align: center; color: var(--muted); }
+.drop.over { border-color: var(--accent); background: var(--accent-soft); }
+.dlg pre.sqlprev { margin: 0; font: 12.5px/1.5 var(--font-mono); background: var(--sunk); padding: 10px; border-radius: 6px; overflow: auto; }
+.choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.choice button { text-align: left; background: var(--sunk); border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 4px; }
+.choice button:hover { border-color: var(--accent); }
+.choice b { font-weight: 600; } .choice span { color: var(--muted); font-size: 12.5px; }
+
+@media (max-width: 860px) {
+  html, body { height: auto; min-height: 100%; }
+  .wb { grid-template-columns: minmax(0, 1fr); flex: none; }
+  .explorer { display: none; max-height: 320px; }
+  body.show-ex .explorer { display: flex; }
+  #toggle-explorer { display: inline-block; }
+  .main { min-height: 640px; }
+  .edwrap { flex-basis: var(--edh, 260px); }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="bar">
+  <div class="brand"><b>DB</b>Sandbox Database</div>
+  <button class="btn" id="toggle-explorer">Explorer</button>
+  <button class="btn primary" id="b-new">＋ New table</button>
+  <button class="btn" id="b-import">Import data</button>
+  <button class="btn" id="b-dump">Export SQL</button>
+  <button class="btn" id="b-sample">Sample databases</button>
+</div>
+
+<div class="wb">
+  <aside class="panel explorer">
+    <div class="ex-head"><span class="eyebrow grow">Explorer</span><button class="btn sm" id="ex-refresh" title="Refresh">Refresh</button></div>
+    <div class="ex-filter"><input type="text" id="ex-filter" placeholder="Filter tables…" aria-label="Filter tables"></div>
+    <div id="tree"></div>
+  </aside>
+
+  <section class="panel main">
+    <div class="tabstrip" id="tabstrip" role="tablist"></div>
+
+    <div class="view" id="qview">
+      <div class="qbar">
+        <button class="btn primary" id="run">Run ▸</button>
+        <button class="btn" id="explain">Explain</button>
+        <button class="btn" id="clear">Clear</button>
+        <span class="grow"></span>
+        <span class="kbd">Ctrl/⌘+Enter runs · selection runs alone</span>
+      </div>
+      <div class="edwrap" id="edwrap">
+        <div class="gutter" id="gutter">1</div>
+        <div class="code"><pre id="hl" aria-hidden="true"></pre><textarea id="sql" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="SQL editor"></textarea></div>
+      </div>
+      <div class="split" id="split" role="separator" aria-orientation="horizontal" title="Drag to resize"></div>
+      <div class="out">
+        <div class="outtabs" role="tablist">
+          <button class="pill" role="tab" data-o="results" aria-selected="true">Results</button>
+          <button class="pill" role="tab" data-o="messages" aria-selected="false">Messages</button>
+          <button class="pill" role="tab" data-o="history" aria-selected="false">History</button>
+          <span class="grow"></span>
+          <span class="meta" id="outmeta"></span>
+          <button class="btn sm" id="copy-csv" hidden>Copy as CSV</button>
+        </div>
+        <div class="outbody" id="outbody"></div>
+      </div>
+    </div>
+
+    <div class="view" id="tview" hidden></div>
+  </section>
+</div>
+
+<footer class="status">
+  <span><span class="dot"></span>Connected to <b>sandbox.db</b> (in your browser)</span>
+  <span id="st-ver"></span>
+  <span class="grow" id="st-msg"></span>
+  <span id="st-saved"></span>
+</footer>
+
+<div class="modal" id="modal" hidden><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-title">
+  <div class="dlg-h"><h2 id="dlg-title"></h2><button class="x" id="dlg-x" aria-label="Close">×</button></div>
+  <div class="dlg-b" id="dlg-body"></div>
+</div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-asm.js"></script>
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const q = n => '"' + String(n).replace(/"/g, '""') + '"';
+const lit = v => v === null || v === undefined ? 'NULL' : typeof v === 'number' ? String(v) : v instanceof Uint8Array ? "X'" + [...v].map(b => b.toString(16).padStart(2, '0')).join('') + "'" : "'" + String(v).replace(/'/g, "''") + "'";
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { } },
+};
+let SQL, db;
+
+/* ---------- persistence (IndexedDB) ---------- */
+const idbOpen = () => new Promise((res, rej) => { const r = indexedDB.open('sandboxdb', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+const idbGet = async k => { const d = await idbOpen(); return new Promise((res, rej) => { const t = d.transaction('kv').objectStore('kv').get(k); t.onsuccess = () => res(t.result); t.onerror = () => rej(t.error); }); };
+const idbSet = async (k, v) => { const d = await idbOpen(); return new Promise((res, rej) => { const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => res(); t.onerror = () => rej(t.error); }); };
+let saveT;
+function scheduleSave() { clearTimeout(saveT); $('#st-saved').textContent = 'saving…'; saveT = setTimeout(async () => { try { await idbSet('db', db.export()); db.run('PRAGMA foreign_keys = ON'); $('#st-saved').textContent = 'saved'; } catch { $('#st-saved').textContent = 'not saved (browser storage unavailable)'; } }, 400); }
+const say = t => { $('#st-msg').textContent = t; };
+
+/* ---------- db helpers ---------- */
+const rowsOf = sql => { const r = db.exec(sql); return r.length ? r[0].values : []; };
+const scalar = sql => { const r = rowsOf(sql); return r.length ? r[0][0] : null; };
+function listObjects() { return rowsOf("SELECT name, type FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY type, name"); }
+const tableExists = n => scalar(`SELECT 1 FROM sqlite_master WHERE type IN ('table','view') AND name = ${lit(n)}`) === 1;
+function tableInfo(name) {
+  const m = rowsOf(`SELECT type, sql FROM sqlite_master WHERE name = ${lit(name)}`)[0] || [];
+  const cols = rowsOf(`PRAGMA table_info(${q(name)})`).map(c => ({ name: c[1], type: c[2], nn: !!c[3], def: c[4], pk: c[5] }));
+  return { isView: m[0] === 'view', sql: m[1] || '', cols };
+}
+const isNumType = t => /int|real|num|doub|float|dec|bool/i.test(t || '');
+function parseVal(str, type) {
+  if (str === 'NULL') return null;
+  if (isNumType(type) && /^-?\d+(\.\d+)?$/.test(str.trim())) return Number(str);
+  if (str === '' && isNumType(type)) return null;
+  return str;
+}
+
+/* ---------- sample database ---------- */
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function buildSample() {
+  const r = rng(42), pick = a => a[Math.floor(r() * a.length)], int = (a, b) => a + Math.floor(r() * (b - a + 1));
+  const day = (start, n) => { const d = new Date(start + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  db.run(`
+  CREATE TABLE customers (id INTEGER PRIMARY KEY, first_name TEXT NOT NULL, last_name TEXT NOT NULL, email TEXT UNIQUE, city TEXT, signup_date TEXT);
+  CREATE TABLE products (id INTEGER PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL, price REAL NOT NULL);
+  CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES customers(id), order_date TEXT NOT NULL, status TEXT NOT NULL);
+  CREATE TABLE order_items (id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id), product_id INTEGER NOT NULL REFERENCES products(id), quantity INTEGER NOT NULL, unit_price REAL NOT NULL);
+  CREATE TABLE departments (id INTEGER PRIMARY KEY, name TEXT NOT NULL, budget INTEGER);
+  CREATE TABLE employees (id INTEGER PRIMARY KEY, first_name TEXT NOT NULL, last_name TEXT NOT NULL, department_id INTEGER REFERENCES departments(id), manager_id INTEGER REFERENCES employees(id), title TEXT, salary INTEGER NOT NULL, hire_date TEXT NOT NULL);
+  `);
+  const first = ['Ava','Liam','Maya','Noah','Priya','Ethan','Sofia','Mateo','Chloe','Omar','Hana','Lucas','Zoe','Diego','Amara','Ryan','Leah','Kenji','Nora','Isaac','Ines','Caleb','Yara','Felix','Mila','Arjun','Grace','Tomas','Ruby','Sami'];
+  const last = ['Patel','Nguyen','Garcia','Kim','Okafor','Smith','Rossi','Cohen','Silva','Murphy','Tanaka','Khan','Larsen','Mendez','Brooks','Chen','Haddad','Novak','Ali','Fischer'];
+  const cities = ['Austin','Boston','Chicago','Denver','Seattle','Portland','Atlanta'];
+  db.run('BEGIN');
+  let st = db.prepare('INSERT INTO customers VALUES (?,?,?,?,?,?)'); const used = new Set();
+  for (let i = 1; i <= 40; i++) { let f, l; do { f = pick(first); l = pick(last); } while (used.has(f + l)); used.add(f + l); st.run([i, f, l, `${f}.${l}@example.com`.toLowerCase(), pick(cities), day('2024-01-01', int(0, 545))]); }
+  st.free();
+  const products = [['Wireless Earbuds','Electronics',79.99],['4K Monitor','Electronics',329.00],['Mechanical Keyboard','Electronics',119.50],['USB-C Hub','Electronics',39.99],['Smart Speaker','Electronics',99.00],['Cast Iron Skillet','Home',44.95],['Linen Sheet Set','Home',129.00],['Desk Lamp','Home',34.50],['French Press','Home',27.99],['The Pragmatic Programmer','Books',42.00],['Designing Data-Intensive Applications','Books',49.99],['SQL Antipatterns','Books',36.50],['Trail Backpack','Outdoor',89.00],['Camping Hammock','Outdoor',59.99],['Insulated Bottle','Outdoor',24.99],['Headlamp','Outdoor',29.00],['Puzzle 1000pc','Toys',19.99],['Telescope Kit','Toys',149.00]];
+  st = db.prepare('INSERT INTO products VALUES (?,?,?,?)'); products.forEach((p, i) => st.run([i + 1, ...p])); st.free();
+  const statuses = ['delivered','delivered','delivered','delivered','shipped','shipped','pending','cancelled'];
+  const so = db.prepare('INSERT INTO orders VALUES (?,?,?,?)'), si = db.prepare('INSERT INTO order_items (order_id, product_id, quantity, unit_price) VALUES (?,?,?,?)');
+  for (let o = 1; o <= 180; o++) {
+    so.run([o, int(1, 34), day('2025-01-01', int(0, 272)), pick(statuses)]);
+    const n = int(1, 4), chosen = new Set(); while (chosen.size < n) chosen.add(int(1, 17));
+    for (const p of chosen) { const price = products[p - 1][2], disc = r() < 0.15 ? 0.9 : 1; si.run([o, p, int(1, 3), Math.round(price * disc * 100) / 100]); }
+  }
+  so.free(); si.free();
+  st = db.prepare('INSERT INTO departments VALUES (?,?,?)');
+  [['Engineering',2400000],['Sales',1200000],['Marketing',800000],['Finance',650000],['Support',500000],['Legal',400000]].forEach((d, i) => st.run([i + 1, ...d])); st.free();
+  st = db.prepare('INSERT INTO employees VALUES (?,?,?,?,?,?,?,?)');
+  st.run([1, 'Helen', 'Marsh', null, null, 'CEO', 260000, '2016-03-01']);
+  [[2,'Victor','Osei',1,'VP Engineering',185000],[3,'Dana','Price',2,'Head of Sales',142000],[4,'Lena','Ortiz',3,'Head of Marketing',128000],[5,'Paul','Weber',4,'Controller',121000],[6,'Mei','Lin',5,'Support Lead',98000]].forEach(h => st.run([h[0], h[1], h[2], h[3], 1, h[4], h[5], day('2017-01-01', int(0, 1500))]));
+  const titles = { 1: ['Software Engineer','Senior Engineer','Data Engineer','Staff Engineer'], 2: ['Account Executive','Sales Rep'], 3: ['Marketing Manager','Content Writer'], 4: ['Analyst','Accountant'], 5: ['Support Agent','Support Specialist'] };
+  const ranges = { 1: [110000, 195000], 2: [62000, 150000], 3: [58000, 105000], 4: [70000, 118000], 5: [48000, 101000] };
+  [1,1,1,1,1,1,1,2,2,2,2,3,3,3,4,4,5,5,5,5].forEach((d, i) => { const [lo, hi] = ranges[d]; st.run([7 + i, pick(first), pick(last), d, d + 1, pick(titles[d]), Math.round(int(lo, hi) / 500) * 500, day('2019-01-01', int(0, 2300))]); });
+  st.run([27, 'Jonah', 'Reyes', null, 1, 'Executive Assistant', 72000, '2023-05-15']);
+  st.free(); db.run('COMMIT');
+}
+function buildLibrary() {
+  db.run(`
+  CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT NOT NULL, country TEXT, born INTEGER);
+  CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT NOT NULL, author_id INTEGER REFERENCES authors(id), genre TEXT, published INTEGER, pages INTEGER);
+  CREATE TABLE members (id INTEGER PRIMARY KEY, name TEXT NOT NULL, joined TEXT);
+  CREATE TABLE loans (id INTEGER PRIMARY KEY, book_id INTEGER REFERENCES books(id), member_id INTEGER REFERENCES members(id), loaned_on TEXT, returned_on TEXT);
+  INSERT INTO authors VALUES (1,'Ursula K. Le Guin','USA',1929),(2,'Octavia E. Butler','USA',1947),(3,'Stanisław Lem','Poland',1921),(4,'Chinua Achebe','Nigeria',1930),(5,'Haruki Murakami','Japan',1949),(6,'Toni Morrison','USA',1931);
+  INSERT INTO books VALUES (1,'The Dispossessed',1,'Sci-Fi',1974,387),(2,'A Wizard of Earthsea',1,'Fantasy',1968,183),(3,'Kindred',2,'Sci-Fi',1979,264),(4,'Parable of the Sower',2,'Sci-Fi',1993,345),(5,'Solaris',3,'Sci-Fi',1961,204),(6,'Things Fall Apart',4,'Literary',1958,209),(7,'Norwegian Wood',5,'Literary',1987,296),(8,'Kafka on the Shore',5,'Fantasy',2002,467),(9,'Beloved',6,'Literary',1987,324),(10,'The Cyberiad',3,'Sci-Fi',1965,295);
+  INSERT INTO members VALUES (1,'Priya Raman','2024-02-11'),(2,'Tom Becker','2024-05-02'),(3,'Alicia Ruiz','2025-01-19'),(4,'Jamal Wright','2025-03-08');
+  INSERT INTO loans VALUES (1,1,1,'2025-04-01','2025-04-20'),(2,3,1,'2025-05-03','2025-05-30'),(3,5,2,'2025-05-10',NULL),(4,9,3,'2025-06-01','2025-06-15'),(5,8,4,'2025-06-12',NULL),(6,2,2,'2025-06-18','2025-07-02');`);
+}
+
+/* ---------- row generator ---------- */
+const FIRST = ['Ava','Liam','Maya','Noah','Priya','Ethan','Sofia','Mateo','Chloe','Omar','Hana','Lucas','Zoe','Diego','Amara','Ryan','Leah','Kenji','Nora','Isaac','Ines','Caleb','Yara','Felix','Mila','Arjun','Grace','Tomas','Ruby','Sami'];
+const LAST = ['Patel','Nguyen','Garcia','Kim','Okafor','Smith','Rossi','Cohen','Silva','Murphy','Tanaka','Khan','Larsen','Mendez','Brooks','Chen','Haddad','Novak','Ali','Fischer'];
+const CITY = ['Austin','Boston','Chicago','Denver','Seattle','Portland','Atlanta','Toronto','Lisbon','Oslo','Pune','Lagos'];
+const COUNTRY = ['USA','Canada','Portugal','Norway','India','Nigeria','Japan','Brazil','Germany','Kenya'];
+const WORDS = ['river','copper','signal','market','quiet','orbit','amber','harvest','paper','lantern','grid','summit','velvet','anchor','pixel','meadow','cinder','harbor','plume','tangent'];
+const PRODUCT = ['Wireless Mouse','Desk Lamp','Notebook','Water Bottle','Backpack','Headphones','Coffee Grinder','Yoga Mat','Phone Stand','Desk Organizer','Camping Stove','Sketchbook'];
+const COMPANY = ['Northwind','Contoso Labs','Fabrikam','Acme Supply','Globex','Initech','Umbrella Co','Stark Works'];
+const TITLES = ['Analyst','Engineer','Manager','Designer','Coordinator','Director','Specialist','Associate'];
+const STATUS = ['active','pending','shipped','cancelled','delivered','closed'];
+const CATEGORY = ['Electronics','Home','Books','Outdoor','Toys','Office'];
+function generateRows(table, n) {
+  const info = tableInfo(table), r = Math.random;
+  const pick = a => a[Math.floor(r() * a.length)], int = (a, b) => a + Math.floor(r() * (b - a + 1));
+  const fks = {}; rowsOf(`PRAGMA foreign_key_list(${q(table)})`).forEach(f => {
+    const parent = f[2], to = f[4];
+    let ids = []; try { ids = rowsOf(`SELECT ${to ? q(to) : 'rowid'} FROM ${q(parent)} LIMIT 5000`).map(x => x[0]); } catch { }
+    fks[f[3]] = ids;
+  });
+  const uniq = new Set(); rowsOf(`PRAGMA index_list(${q(table)})`).forEach(ix => { if (ix[2]) rowsOf(`PRAGMA index_info(${q(ix[1])})`).forEach(c => uniq.add(c[2])); });
+  const singleIntPk = info.cols.filter(c => c.pk).length === 1 && /^int/i.test(info.cols.find(c => c.pk).type || '');
+  const cols = info.cols.filter(c => !(singleIntPk && c.pk));
+  if (!cols.length) throw new Error('Nothing to generate: the table has only an auto id column.');
+  const base = {}; cols.forEach(c => { base[c.name] = uniq.has(c.name) ? (scalar(`SELECT COUNT(*) FROM ${q(table)}`) || 0) : 0; });
+  const personTable = /user|customer|person|people|employee|member|author|student|contact|client/i.test(table);
+  const dateIn = (yrs) => { const d = new Date(Date.now() - r() * yrs * 365 * 864e5); return d.toISOString().slice(0, 10); };
+  function gen(c, i) {
+    const nm = c.name.toLowerCase(), u = uniq.has(c.name), k = base[c.name] + i + 1;
+    if (fks[c.name]) { const ids = fks[c.name]; return ids.length ? pick(ids) : null; }
+    let v;
+    if (/(^|_)(first|given)_?name|^fname$/.test(nm)) v = pick(FIRST);
+    else if (/(last|sur|family)_?name|^lname$/.test(nm)) v = pick(LAST);
+    else if (/e?mail/.test(nm)) v = `${pick(FIRST)}.${pick(LAST)}${u ? k : int(1, 99)}@example.com`.toLowerCase();
+    else if (/phone|mobile/.test(nm)) v = `+1-${int(200, 989)}-555-${String(int(0, 9999)).padStart(4, '0')}`;
+    else if (/^name$|full_?name/.test(nm)) v = personTable ? `${pick(FIRST)} ${pick(LAST)}` : /compan|org|dept|department|vendor|supplier/i.test(table) ? pick(COMPANY) : /product|item|goods/i.test(table) ? pick(PRODUCT) : `${pick(WORDS)} ${pick(WORDS)}`;
+    else if (/city|town/.test(nm)) v = pick(CITY);
+    else if (/country/.test(nm)) v = pick(COUNTRY);
+    else if (/address|street/.test(nm)) v = `${int(1, 999)} ${pick(WORDS)} St`;
+    else if (/zip|postal/.test(nm)) v = String(int(10000, 99999));
+    else if (/url|website|link/.test(nm)) v = `https://example.com/${pick(WORDS)}/${int(1, 999)}`;
+    else if (/uuid|guid/.test(nm)) v = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${k}`;
+    else if (/title|position|role|job/.test(nm)) v = pick(TITLES);
+    else if (/status|state$|stage/.test(nm)) v = pick(STATUS);
+    else if (/categor|genre|type|kind|segment/.test(nm)) v = pick(CATEGORY);
+    else if (/desc|note|comment|body|text|bio|summary/.test(nm)) v = `${pick(WORDS)} ${pick(WORDS)} ${pick(WORDS)} ${pick(WORDS)} ${pick(WORDS)}.`;
+    else if (/birth|dob/.test(nm)) v = dateIn(50);
+    else if (/(_at|time|timestamp)$/.test(nm)) v = dateIn(2) + ' ' + String(int(0, 23)).padStart(2, '0') + ':' + String(int(0, 59)).padStart(2, '0') + ':' + String(int(0, 59)).padStart(2, '0');
+    else if (/date|^day$|_on$/.test(nm)) v = dateIn(2);
+    else if (/^(is|has|can)_|active|enabled|verified|flag/.test(nm)) v = int(0, 1);
+    else if (/salary|wage|income/.test(nm)) v = Math.round(int(40000, 180000) / 500) * 500;
+    else if (/price|amount|total|cost|fee|balance|revenue/.test(nm)) v = Math.round((5 + r() * 495) * 100) / 100;
+    else if (/qty|quantity|count|stock|units|number_of/.test(nm)) v = int(1, 20);
+    else if (/^age$/.test(nm)) v = int(18, 80);
+    else if (/rating|score|stars/.test(nm)) v = /int/i.test(c.type) ? int(1, 5) : Math.round((1 + r() * 4) * 10) / 10;
+    else if (/year/.test(nm)) v = int(1990, 2025);
+    else if (/percent|pct|rate/.test(nm)) v = int(0, 100);
+    else if (/int|bool/i.test(c.type || '')) v = u ? k : int(1, 1000);
+    else if (/real|floa|doub|num|dec/i.test(c.type || '')) v = Math.round(r() * 100000) / 100;
+    else v = `${pick(WORDS)} ${pick(WORDS)}`;
+    if (u && typeof v === 'string' && !/@/.test(v)) v += ' ' + k;
+    else if (u && typeof v === 'number') v = k;
+    return v;
+  }
+  db.run('BEGIN');
+  let added = 0;
+  try {
+    const st = db.prepare(`INSERT OR IGNORE INTO ${q(table)} (${cols.map(c => q(c.name)).join(',')}) VALUES (${cols.map(() => '?').join(',')})`);
+    for (let i = 0; i < n; i++) { st.run(cols.map(c => gen(c, i))); added += db.getRowsModified(); }
+    st.free(); db.run('COMMIT');
+  } catch (e) { try { db.run('ROLLBACK'); } catch { } throw e; }
+  return added;
+}
+
+/* ---------- tabs ---------- */
+let tabs = [], activeId = null, nextId = 1, qCounter = 0;
+const activeTab = () => tabs.find(t => t.id === activeId);
+function saveTabs() { store.set('sbx.tabs', JSON.stringify({ q: tabs.filter(t => t.type === 'query').map(t => ({ id: t.id, title: t.title, sql: t.sql })), n: nextId, c: qCounter })); }
+function newQuery(sql = '', title) { const t = { id: 't' + nextId++, type: 'query', title: title || 'Query ' + (++qCounter), sql, results: [], otab: 'results' }; tabs.push(t); activate(t.id); return t; }
+function openTable(name) {
+  let t = tabs.find(x => x.type === 'table' && x.name === name);
+  if (!t) { t = { id: 't' + nextId++, type: 'table', name, sub: 'data', page: 0, sort: null, inserting: false, confirmDrop: false }; tabs.push(t); }
+  activate(t.id);
+}
+function closeTab(id) {
+  const i = tabs.findIndex(t => t.id === id); if (i < 0) return;
+  stashEditor(); tabs.splice(i, 1);
+  if (!tabs.length) newQuery('', undefined);
+  else if (activeId === id) activate(tabs[Math.max(0, i - 1)].id);
+  else renderTabs();
+  saveTabs();
+}
+function stashEditor() { const t = activeTab(); if (t && t.type === 'query') t.sql = $('#sql').value; }
+function activate(id) {
+  stashEditor(); activeId = id; const t = activeTab();
+  renderTabs();
+  $('#qview').hidden = t.type !== 'query'; $('#tview').hidden = t.type !== 'table';
+  if (t.type === 'query') { $('#sql').value = t.sql; onEdit(true); renderOut(); $('#sql').focus(); }
+  else renderTableView();
+  renderTree(); saveTabs();
+}
+function renderTabs() {
+  $('#tabstrip').innerHTML = tabs.map(t => `<div class="tab" role="tab" aria-selected="${t.id === activeId}"><button class="ttl" data-act="go" data-id="${t.id}">${t.type === 'table' ? '<span class="ico">▦</span> ' + esc(t.name) : esc(t.title)}</button><button class="x" data-act="close" data-id="${t.id}" aria-label="Close tab">×</button></div>`).join('') + '<button class="tab-add" id="tab-add" title="New query tab" aria-label="New query tab">＋</button>';
+}
+$('#tabstrip').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.id === 'tab-add') newQuery(); else if (b.dataset.act === 'go') activate(b.dataset.id); else if (b.dataset.act === 'close') closeTab(b.dataset.id);
+});
+
+/* ---------- editor ---------- */
+const KW = new Set('select from where group by order having limit offset join left right inner outer cross on as and or not in is null like glob between exists case when then else end insert into values update set delete create table index view drop alter add column rename to primary key foreign references unique default check distinct union all intersect except with recursive over partition asc desc pragma begin commit rollback transaction if autoincrement integer text real blob numeric varchar int boolean date datetime using natural explain query plan replace returning trigger collate constraint cascade restrict true false current_timestamp'.split(' '));
+function hl(s) {
+  return s.replace(/(--[^\n]*|\/\*[\s\S]*?(?:\*\/|$))|('(?:[^']|'')*(?:'|$))|("(?:[^"]|"")*(?:"|$))|(\b\d+(?:\.\d+)?\b)|([A-Za-z_]\w*)|([&<>])/g, (m, c, s1, s2, n, w, e) => {
+    if (c) return `<i class="c">${esc(c)}</i>`; if (s1) return `<i class="s">${esc(s1)}</i>`; if (s2) return `<i class="id">${esc(s2)}</i>`;
+    if (n) return `<i class="n">${n}</i>`; if (w) return KW.has(w.toLowerCase()) ? `<i class="k">${w}</i>` : w; return esc(e);
+  }) + '\n';
+}
+function onEdit(noSave) {
+  const ta = $('#sql'), n = ta.value.split('\n').length;
+  $('#hl').innerHTML = hl(ta.value);
+  $('#gutter').textContent = Array.from({ length: n }, (_, i) => i + 1).join('\n');
+  syncScroll();
+  if (!noSave) { const t = activeTab(); if (t && t.type === 'query') { t.sql = ta.value; saveTabs(); } }
+}
+function syncScroll() { const ta = $('#sql'); $('#hl').scrollTop = ta.scrollTop; $('#hl').scrollLeft = ta.scrollLeft; $('#gutter').scrollTop = ta.scrollTop; }
+$('#sql').addEventListener('input', () => onEdit());
+$('#sql').addEventListener('scroll', syncScroll);
+$('#sql').addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); runQuery(); }
+  else if (e.key === 'Tab') { e.preventDefault(); const ta = e.target; ta.setRangeText('  ', ta.selectionStart, ta.selectionEnd, 'end'); onEdit(); }
+});
+function insertAtCursor(text) {
+  let t = activeTab(); if (!t || t.type !== 'query') { t = [...tabs].reverse().find(x => x.type === 'query') || newQuery(); activate(t.id); }
+  const ta = $('#sql'); ta.focus(); ta.setRangeText(text, ta.selectionStart, ta.selectionEnd, 'end'); onEdit();
+}
+$('#clear').onclick = () => { $('#sql').value = ''; onEdit(); $('#sql').focus(); };
+$('#run').onclick = () => runQuery();
+$('#explain').onclick = () => {
+  const sql = selectedOrAll().split(';')[0].trim(); if (!sql) return;
+  runQuery('EXPLAIN QUERY PLAN ' + sql);
+};
+const selectedOrAll = () => { const ta = $('#sql'); const sel = ta.value.slice(ta.selectionStart, ta.selectionEnd); return (sel.trim() ? sel : ta.value).trim(); };
+// resizable split between editor and results
+{
+  const sp = $('#split'), root = document.documentElement;
+  const saved = parseInt(store.get('sbx.edh') || '0'); if (saved) root.style.setProperty('--edh', saved + 'px');
+  sp.addEventListener('pointerdown', e => {
+    sp.setPointerCapture(e.pointerId); sp.classList.add('drag');
+    const top = $('#edwrap').getBoundingClientRect().top, total = $('#qview').getBoundingClientRect().height;
+    const move = ev => { const h = Math.max(90, Math.min(total - 180, ev.clientY - top)); root.style.setProperty('--edh', h + 'px'); store.set('sbx.edh', Math.round(h)); };
+    const up = () => { sp.classList.remove('drag'); sp.removeEventListener('pointermove', move); sp.removeEventListener('pointerup', up); };
+    sp.addEventListener('pointermove', move); sp.addEventListener('pointerup', up);
+  });
+}
+
+/* ---------- running queries ---------- */
+let history = []; try { history = JSON.parse(store.get('sbx.hist') || '[]'); } catch { }
+function runStatements(sql) {
+  const out = [];
+  try {
+    for (const stmt of db.iterateStatements(sql)) {
+      const t0 = performance.now(), text = stmt.getSQL().trim(), cols = stmt.getColumnNames();
+      if (cols.length) { const rows = []; while (stmt.step()) rows.push(stmt.get()); out.push({ text, cols, rows, ms: performance.now() - t0 }); }
+      else { stmt.step(); out.push({ text, changes: db.getRowsModified(), ms: performance.now() - t0 }); }
+    }
+  } catch (e) { out.push({ error: e.message }); }
+  return out;
+}
+function runQuery(override) {
+  const t = activeTab(); if (!t || t.type !== 'query') return;
+  const sql = override || selectedOrAll();
+  if (!sql) { t.results = []; renderOut(); return; }
+  t.results = runStatements(sql);
+  const hasErr = t.results.some(r => r.error), sets = t.results.filter(r => r.cols);
+  t.otab = hasErr || !sets.length ? 'messages' : 'results';
+  if (!override) { history = [sql, ...history.filter(h => h !== sql)].slice(0, 30); store.set('sbx.hist', JSON.stringify(history)); }
+  renderOut();
+  if (t.results.some(r => r.changes !== undefined) || /\b(create|drop|alter)\b/i.test(sql)) { schemaChanged(); scheduleSave(); }
+  const last = t.results[t.results.length - 1]; say(hasErr ? 'Query failed' : `Ran ${t.results.length} statement${t.results.length > 1 ? 's' : ''}`);
+}
+function schemaChanged() {
+  tabs = tabs.filter(t => t.type !== 'table' || tableExists(t.name));
+  if (!tabs.length) newQuery();
+  if (!activeTab()) activate(tabs[0].id);
+  renderTabs(); renderTree();
+  if (activeTab().type === 'table') renderTableView();
+}
+function gridHtml(set, limit = 1000) {
+  if (!set.rows.length) return '<div class="empty">0 rows returned.</div>';
+  const rows = set.rows.slice(0, limit);
+  return `<table class="grid"><thead><tr><th class="rn">#</th>${set.cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.map((r, i) => `<tr><td class="rn">${i + 1}</td>${r.map(cell).join('')}</tr>`).join('')}</tbody></table>${set.rows.length > limit ? `<div class="empty">Showing first ${limit} of ${set.rows.length} rows.</div>` : ''}`;
+}
+function cell(v) { return v === null ? '<td class="nul">NULL</td>' : typeof v === 'number' ? `<td class="num">${v}</td>` : v instanceof Uint8Array ? `<td class="nul">BLOB ${v.length}B</td>` : `<td title="${esc(String(v).slice(0, 300))}">${esc(v)}</td>`; }
+function renderOut() {
+  const t = activeTab(); if (!t || t.type !== 'query') return;
+  document.querySelectorAll('.outtabs .pill').forEach(b => b.setAttribute('aria-selected', b.dataset.o === t.otab));
+  const sets = t.results.filter(r => r.cols); const body = $('#outbody');
+  $('#copy-csv').hidden = !(t.otab === 'results' && sets.length);
+  const lastSet = sets[sets.length - 1];
+  $('#outmeta').textContent = t.results.length ? (lastSet ? `${lastSet.rows.length} row${lastSet.rows.length !== 1 ? 's' : ''} · ` : '') + `${t.results.reduce((a, r) => a + (r.ms || 0), 0).toFixed(1)} ms` : '';
+  if (t.otab === 'history') { body.innerHTML = history.length ? `<ul class="hist">${history.map((h, i) => `<li><button data-i="${i}" title="${esc(h)}">${esc(h.replace(/\s+/g, ' '))}</button></li>`).join('')}</ul>` : '<div class="empty">Queries you run appear here.</div>'; return; }
+  if (!t.results.length) { body.innerHTML = '<div class="empty">Run a query to see results. Try <b>Ctrl/⌘ + Enter</b>.</div>'; return; }
+  if (t.otab === 'messages') {
+    body.innerHTML = `<div class="msgs">${t.results.map(r => r.error ? `<div class="err">Error: ${esc(r.error)}</div>` : `<div class="ok">✓ ${r.cols ? `${r.rows.length} row${r.rows.length !== 1 ? 's' : ''} returned` : /^\s*(insert|update|delete|replace)/i.test(r.text) ? `${r.changes} row${r.changes !== 1 ? 's' : ''} affected` : 'OK'} <span class="t">· ${r.ms.toFixed(1)} ms · ${esc(r.text.replace(/\s+/g, ' ').slice(0, 90))}</span></div>`).join('')}</div>`; return;
+  }
+  const err = t.results.find(r => r.error);
+  body.innerHTML = (err ? `<div class="msgs"><div class="err">Error: ${esc(err.error)}</div></div>` : '') + (sets.length ? sets.map(s => `${sets.length > 1 ? `<div class="rs-cap">${esc(s.text.replace(/\s+/g, ' '))}</div>` : ''}${gridHtml(s)}`).join('') : '');
+}
+document.querySelectorAll('.outtabs .pill').forEach(b => b.onclick = () => { const t = activeTab(); t.otab = b.dataset.o; renderOut(); });
+$('#outbody').addEventListener('click', e => { const b = e.target.closest('.hist button'); if (b) { $('#sql').value = history[+b.dataset.i]; onEdit(); $('#sql').focus(); } });
+function copyText(text, okMsg) {
+  const done = () => say(okMsg);
+  const fallback = () => { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); done(); } catch { say('Copy blocked by the browser. Select the text and copy manually.'); } ta.remove(); };
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done, fallback); else fallback();
+}
+$('#copy-csv').onclick = () => {
+  const sets = activeTab().results.filter(r => r.cols); const s = sets[sets.length - 1]; if (!s) return;
+  const f = v => v === null ? '' : /[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
+  copyText([s.cols.map(f).join(','), ...s.rows.map(r => r.map(f).join(','))].join('\n'), `Copied ${s.rows.length} rows as CSV`);
+};
+
+/* ---------- explorer ---------- */
+const expanded = new Set();
+function renderTree() {
+  const filter = $('#ex-filter').value.trim().toLowerCase(), cur = activeTab();
+  const objs = listObjects().filter(([n]) => !filter || n.toLowerCase().includes(filter));
+  const mk = (title, type) => {
+    const items = objs.filter(o => o[1] === type); if (!items.length) return '';
+    return `<div class="grp eyebrow">${title} (${items.length})</div>` + items.map(([name]) => {
+      const open = expanded.has(name), info = tableInfo(name);
+      let n = ''; try { n = scalar(`SELECT COUNT(*) FROM ${q(name)}`); } catch { }
+      return `<div class="node"><div class="node-row ${cur && cur.type === 'table' && cur.name === name ? 'cur' : ''}"><button class="chev" data-a="tog" data-n="${esc(name)}" aria-label="Expand ${esc(name)}" aria-expanded="${open}">${open ? '▾' : '▸'}</button><button class="node-name" data-a="open" data-n="${esc(name)}" title="Open ${esc(name)}">${esc(name)}</button><span class="node-n">${n}</span></div>
+      ${open ? `<div class="node-body">${info.cols.map(c => `<button class="col-row" data-a="col" data-c="${esc(c.name)}" title="Insert into editor"><span class="${c.pk ? 'pk' : ''}">${esc(c.name)}${c.pk ? ' 🔑' : ''}</span><span class="t">${esc(c.type || 'ANY')}</span></button>`).join('')}
+      <div class="node-acts"><button class="btn sm" data-a="sel" data-n="${esc(name)}">SELECT</button>${type === 'table' ? `<button class="btn sm" data-a="gen" data-n="${esc(name)}">Generate rows</button>` : ''}</div></div>` : ''}</div>`;
+    }).join('');
+  };
+  const html = mk('Tables', 'table') + mk('Views', 'view');
+  $('#tree').innerHTML = html || `<div class="empty-ex">${filter ? 'No tables match.' : 'This database is empty. Use <b>New table</b>, <b>Import data</b>, or load a sample database.'}</div>`;
+}
+$('#tree').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return; const n = b.dataset.n;
+  switch (b.dataset.a) {
+    case 'tog': expanded.has(n) ? expanded.delete(n) : expanded.add(n); renderTree(); break;
+    case 'open': openTable(n); document.body.classList.remove('show-ex'); break;
+    case 'col': insertAtCursor(q(b.dataset.c)); break;
+    case 'sel': newQuery(`SELECT *\nFROM ${q(n)}\nLIMIT 100;`, n); runQuery(); break;
+    case 'gen': genDialog(n); break;
+  }
+});
+$('#ex-filter').addEventListener('input', renderTree);
+$('#ex-refresh').onclick = () => { schemaChanged(); say('Refreshed'); };
+$('#toggle-explorer').onclick = () => document.body.classList.toggle('show-ex');
+
+/* ---------- table viewer ---------- */
+const PS = 100;
+function renderTableView() {
+  const t = activeTab(); if (!t || t.type !== 'table') return;
+  if (!tableExists(t.name)) { closeTab(t.id); return; }
+  const info = tableInfo(t.name), v = $('#tview');
+  const total = info.cols.length ? scalar(`SELECT COUNT(*) FROM ${q(t.name)}`) : 0;
+  let html = `<div class="tv-head"><h2>${esc(t.name)}</h2><span class="badge">${info.isView ? 'view' : 'table'}</span><span class="meta">${total} rows · ${info.cols.length} columns</span><span class="grow"></span>
+    <div class="row">
+      <button class="btn sm ${t.sub === 'data' ? 'primary' : ''}" data-a="sub" data-s="data">Data</button>
+      <button class="btn sm ${t.sub === 'structure' ? 'primary' : ''}" data-a="sub" data-s="structure">Structure</button>
+      ${info.isView ? '' : '<button class="btn sm" data-a="gen">Generate rows</button>'}
+      <button class="btn sm" data-a="query">Open in query tab</button>
+    </div></div>`;
+  if (t.sub === 'structure') html += structureHtml(t, info);
+  else html += dataHtml(t, info, total);
+  v.innerHTML = html;
+}
+function dataHtml(t, info, total) {
+  const order = t.sort ? ` ORDER BY ${q(t.sort.col)} ${t.sort.dir}` : '';
+  let ro = info.isView, res = null, hasRid = false;
+  if (!ro) { try { res = db.exec(`SELECT rowid AS "__rid", * FROM ${q(t.name)}${order} LIMIT ${PS} OFFSET ${t.page * PS}`)[0]; hasRid = true; } catch { ro = true; } }
+  if (!res && ro) { try { res = db.exec(`SELECT * FROM ${q(t.name)}${order} LIMIT ${PS} OFFSET ${t.page * PS}`)[0]; } catch { } }
+  const names = info.cols.map(c => c.name);
+  const rows = res ? res.values : [], off = hasRid ? 1 : 0;
+  const head = `<tr><th class="rn">#</th>${ro ? '' : '<th></th>'}${names.map(n => `<th class="sortable" data-a="sort" data-c="${esc(n)}">${esc(n)}${t.sort && t.sort.col === n ? (t.sort.dir === 'ASC' ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr>`;
+  const ins = t.inserting ? `<tr class="ins"><td class="rn">new</td><td><button class="btn sm primary" data-a="ins-go">Insert</button></td>${info.cols.map((c, i) => `<td><input type="text" data-ic="${i}" placeholder="${c.pk && /^int/i.test(c.type || '') ? 'auto' : c.def !== null ? esc(c.def) : 'NULL'}" aria-label="${esc(c.name)}"></td>`).join('')}</tr>` : '';
+  const body = rows.map((r, i) => `<tr data-rid="${hasRid ? r[0] : ''}"><td class="rn">${t.page * PS + i + 1}</td>${ro ? '' : `<td><button class="del" data-a="del" data-rid="${r[0]}" title="Delete row" aria-label="Delete row">✕</button></td>`}${names.map((n, ci) => { const val = r[ci + off]; return val === null ? `<td class="nul ${ro ? '' : 'edit'}" data-c="${ci}">NULL</td>` : typeof val === 'number' ? `<td class="num ${ro ? '' : 'edit'}" data-c="${ci}">${val}</td>` : `<td class="${ro ? '' : 'edit'}" data-c="${ci}" title="${esc(String(val).slice(0, 300))}">${esc(val)}</td>`; }).join('')}</tr>`).join('');
+  const from = total ? t.page * PS + 1 : 0, to = Math.min(total, (t.page + 1) * PS);
+  return `<div class="tv-body">${names.length ? `<table class="grid"><thead>${head}</thead><tbody>${ins}${body}</tbody></table>` : '<div class="empty">No columns.</div>'}${!rows.length && !t.inserting ? `<div class="empty">This table has no rows yet.${ro ? '' : ' Use <b>Insert row</b>, <b>Generate rows</b> or an INSERT statement.'}</div>` : ''}</div>
+  <div class="tv-foot">${ro ? '' : `<button class="btn sm" data-a="ins">${t.inserting ? 'Cancel insert' : '＋ Insert row'}</button>`}<span class="meta">${ro ? 'Read only. ' : 'Double-click a cell to edit. '}Rows ${from}–${to} of ${total}</span><span style="flex:1"></span><button class="btn sm" data-a="prev" ${t.page === 0 ? 'disabled' : ''}>◂ Prev</button><button class="btn sm" data-a="next" ${to >= total ? 'disabled' : ''}>Next ▸</button></div>`;
+}
+function structureHtml(t, info) {
+  const fks = rowsOf(`PRAGMA foreign_key_list(${q(t.name)})`), idx = rowsOf(`PRAGMA index_list(${q(t.name)})`);
+  return `<div class="tv-body">
+  <div class="sec"><h3 class="eyebrow">Columns</h3><div style="overflow:auto"><table class="grid"><thead><tr><th>name</th><th>type</th><th>not null</th><th>default</th><th>key</th></tr></thead><tbody>${info.cols.map(c => `<tr><td>${esc(c.name)}</td><td>${esc(c.type || 'ANY')}</td><td>${c.nn ? 'yes' : ''}</td><td>${c.def === null ? '<span class="nul">—</span>' : esc(c.def)}</td><td>${c.pk ? 'PRIMARY' : ''}</td></tr>`).join('')}</tbody></table></div></div>
+  ${fks.length ? `<div class="sec"><h3 class="eyebrow">Foreign keys</h3>${fks.map(f => `<div class="kbd">${esc(f[3])} → ${esc(f[2])}(${esc(f[4] || 'rowid')})</div>`).join('')}</div>` : ''}
+  ${idx.length ? `<div class="sec"><h3 class="eyebrow">Indexes</h3>${idx.map(i => `<div class="kbd">${esc(i[1])}${i[2] ? ' · unique' : ''} · (${rowsOf(`PRAGMA index_info(${q(i[1])})`).map(c => esc(c[2])).join(', ')})</div>`).join('')}</div>` : ''}
+  <div class="sec"><h3 class="eyebrow">Definition</h3><pre>${esc(info.sql)}</pre></div>
+  ${info.isView ? '' : `<div class="sec"><h3 class="eyebrow">Alter</h3>
+    <div class="row"><input type="text" id="ac-name" placeholder="new column name" aria-label="New column name"><select id="ac-type" aria-label="Column type"><option>TEXT</option><option>INTEGER</option><option>REAL</option><option>NUMERIC</option><option>BLOB</option></select><input type="text" id="ac-def" placeholder="default (optional)" aria-label="Default value"><button class="btn sm" data-a="addcol">Add column</button></div>
+    <div class="row"><input type="text" id="rn-name" value="${esc(t.name)}" aria-label="Table name"><button class="btn sm" data-a="rename">Rename table</button>
+    ${t.confirmDrop ? `<span class="meta">Drop ${esc(t.name)} and all its rows?</span><button class="btn sm danger" data-a="drop-yes">Yes, drop it</button><button class="btn sm" data-a="drop-no">Cancel</button>` : '<button class="btn sm danger" data-a="drop">Drop table</button>'}</div>
+    <p class="note" id="alter-msg" role="status"></p></div>`}</div>`;
+}
+$('#tview').addEventListener('click', e => {
+  const t = activeTab(); const el = e.target.closest('[data-a]'); if (!el || !t) return;
+  const a = el.dataset.a, name = t.name;
+  try {
+    switch (a) {
+      case 'sub': t.sub = el.dataset.s; renderTableView(); break;
+      case 'query': newQuery(`SELECT *\nFROM ${q(name)}\nLIMIT 100;`, name); runQuery(); break;
+      case 'gen': genDialog(name); break;
+      case 'sort': { const c = el.dataset.c; t.sort = !t.sort || t.sort.col !== c ? { col: c, dir: 'ASC' } : t.sort.dir === 'ASC' ? { col: c, dir: 'DESC' } : null; t.page = 0; renderTableView(); break; }
+      case 'prev': t.page = Math.max(0, t.page - 1); renderTableView(); break;
+      case 'next': t.page++; renderTableView(); break;
+      case 'del': db.run(`DELETE FROM ${q(name)} WHERE rowid = ?`, [Number(el.dataset.rid)]); scheduleSave(); say('Row deleted'); schemaChanged(); break;
+      case 'ins': t.inserting = !t.inserting; renderTableView(); if (t.inserting) $('#tview input[data-ic]')?.focus(); break;
+      case 'ins-go': doInsert(t); break;
+      case 'addcol': {
+        const n = $('#ac-name').value.trim(); if (!n) { $('#alter-msg').textContent = 'Enter a column name.'; return; }
+        const d = $('#ac-def').value.trim(); db.run(`ALTER TABLE ${q(name)} ADD COLUMN ${q(n)} ${$('#ac-type').value}${d ? ' DEFAULT ' + (/^-?\d+(\.\d+)?$/.test(d) ? d : lit(d)) : ''}`);
+        scheduleSave(); say(`Added column ${n}`); schemaChanged(); break;
+      }
+      case 'rename': {
+        const n = $('#rn-name').value.trim(); if (!n || n === name) return;
+        db.run(`ALTER TABLE ${q(name)} RENAME TO ${q(n)}`); t.name = n; scheduleSave(); say(`Renamed to ${n}`); schemaChanged(); break;
+      }
+      case 'drop': t.confirmDrop = true; renderTableView(); break;
+      case 'drop-no': t.confirmDrop = false; renderTableView(); break;
+      case 'drop-yes': db.run(`DROP TABLE ${q(name)}`); scheduleSave(); say(`Dropped ${name}`); schemaChanged(); break;
+    }
+  } catch (err) { const m = $('#alter-msg'); if (m) m.textContent = err.message; say('Error: ' + err.message); }
+});
+function doInsert(t) {
+  const info = tableInfo(t.name), inputs = [...document.querySelectorAll('#tview input[data-ic]')];
+  const cols = [], vals = [];
+  inputs.forEach(inp => { const v = inp.value; if (v === '') return; const c = info.cols[+inp.dataset.ic]; cols.push(q(c.name)); vals.push(parseVal(v, c.type)); });
+  try {
+    db.run(cols.length ? `INSERT INTO ${q(t.name)} (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})` : `INSERT INTO ${q(t.name)} DEFAULT VALUES`, vals);
+    t.inserting = false; scheduleSave(); say('1 row inserted'); schemaChanged();
+  } catch (err) { say('Insert failed: ' + err.message); }
+}
+$('#tview').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('input[data-ic]')) doInsert(activeTab()); });
+$('#tview').addEventListener('dblclick', e => {
+  const td = e.target.closest('td.edit'); const t = activeTab(); if (!td || td.querySelector('input') || !t) return;
+  const tr = td.parentElement, rid = Number(tr.dataset.rid), info = tableInfo(t.name), col = info.cols[+td.dataset.c];
+  const old = td.classList.contains('nul') ? null : td.textContent; const full = rowsOf(`SELECT ${q(col.name)} FROM ${q(t.name)} WHERE rowid = ${rid}`)[0]?.[0];
+  const inp = document.createElement('input'); inp.type = 'text'; inp.value = full === null || full === undefined ? '' : String(full); inp.placeholder = 'NULL';
+  td.textContent = ''; td.appendChild(inp); inp.focus(); inp.select();
+  let done = false;
+  const finish = commit => {
+    if (done) return; done = true;
+    if (commit) {
+      try { const v = inp.value === '' && full === null ? null : parseVal(inp.value, col.type); db.run(`UPDATE ${q(t.name)} SET ${q(col.name)} = ? WHERE rowid = ?`, [v, rid]); scheduleSave(); say('Cell updated'); }
+      catch (err) { say('Update failed: ' + err.message); }
+    }
+    renderTableView();
+  };
+  inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') finish(true); else if (ev.key === 'Escape') finish(false); });
+  inp.addEventListener('blur', () => finish(true));
+});
+
+/* ---------- dialogs ---------- */
+function openModal(title, html) { $('#dlg-title').textContent = title; $('#dlg-body').innerHTML = html; $('#modal').hidden = false; }
+function closeModal() { $('#modal').hidden = true; $('#dlg-body').innerHTML = ''; }
+$('#dlg-x').onclick = closeModal;
+$('#modal').addEventListener('mousedown', e => { if (e.target === $('#modal')) closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
+
+function genDialog(table) {
+  openModal(`Generate rows for ${table}`, `<p class="note">Fills the table with realistic fake data. Column names guide the values (email, price, city, dates…), and foreign key columns pick from existing parent rows, so load parent tables first.</p>
+    <label class="l">Number of rows<input type="number" id="gen-n" value="100" min="1" max="5000"></label>
+    <div class="row"><button class="btn primary" id="gen-go">Generate</button><button class="btn" id="gen-cancel">Cancel</button></div><p class="note" id="gen-msg" role="status"></p>`);
+  $('#gen-cancel').onclick = closeModal;
+  $('#gen-go').onclick = () => {
+    const n = Math.max(1, Math.min(5000, parseInt($('#gen-n').value) || 1));
+    try { const added = generateRows(table, n); scheduleSave(); closeModal(); say(`Generated ${added} rows in ${table}`); schemaChanged(); if (!tabs.find(t => t.type === 'table' && t.name === table)) openTable(table); }
+    catch (e) { $('#gen-msg').textContent = e.message; }
+  };
+}
+
+/* table designer */
+let des;
+const TYPES = ['INTEGER', 'TEXT', 'REAL', 'NUMERIC', 'BLOB', 'BOOLEAN', 'DATE', 'DATETIME'];
+function designSql(d) {
+  const named = d.cols.filter(c => c.name.trim()), pks = named.filter(c => c.pk), single = pks.length === 1;
+  const lines = named.map(c => {
+    let s = `  ${q(c.name.trim())} ${c.type}`;
+    if (single && c.pk) s += ' PRIMARY KEY'; if (c.nn && !c.pk) s += ' NOT NULL'; if (c.uq && !c.pk) s += ' UNIQUE';
+    const df = c.def.trim(); if (df !== '') s += ' DEFAULT ' + (/^-?\d+(\.\d+)?$/.test(df) || /^(NULL|CURRENT_TIMESTAMP|CURRENT_DATE|TRUE|FALSE)$/i.test(df) ? df : lit(df));
+    if (c.ref) s += ` REFERENCES ${c.ref}`; return s;
+  });
+  if (pks.length > 1) lines.push(`  PRIMARY KEY (${pks.map(c => q(c.name.trim())).join(', ')})`);
+  return `CREATE TABLE ${q(d.name.trim() || 'table_name')} (\n${lines.join(',\n')}\n);`;
+}
+function designerDialog() {
+  des = { name: '', cols: [{ name: 'id', type: 'INTEGER', pk: true, nn: false, uq: false, def: '', ref: '' }, { name: '', type: 'TEXT', pk: false, nn: false, uq: false, def: '', ref: '' }] };
+  openModal('New table', `<label class="l">Table name<input type="text" id="d-name" placeholder="e.g. employees" autocomplete="off"></label>
+    <div class="dlg-scroll"><table class="desg"><thead><tr><th>Column</th><th>Type</th><th>PK</th><th>Not null</th><th>Unique</th><th>Default</th><th>References</th><th></th></tr></thead><tbody id="d-rows"></tbody></table></div>
+    <div class="row"><button class="btn sm" id="d-add">＋ Add column</button></div>
+    <pre class="sqlprev" id="d-sql"></pre>
+    <div class="row"><button class="btn primary" id="d-go">Create table</button><button class="btn" id="d-cancel">Cancel</button><span class="note" id="d-msg" role="status"></span></div>`);
+  const refs = rowsOf("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").map(r => { const pk = tableInfo(r[0]).cols.find(c => c.pk); return pk ? { label: `${r[0]}(${pk.name})`, value: `${q(r[0])}(${q(pk.name)})` } : null; }).filter(Boolean);
+  const draw = () => {
+    $('#d-rows').innerHTML = des.cols.map((c, i) => `<tr><td><input type="text" data-i="${i}" data-k="name" value="${esc(c.name)}" placeholder="column_name" aria-label="Column name"></td>
+      <td><select data-i="${i}" data-k="type" aria-label="Type">${TYPES.map(t => `<option ${t === c.type ? 'selected' : ''}>${t}</option>`).join('')}</select></td>
+      <td><input type="checkbox" data-i="${i}" data-k="pk" ${c.pk ? 'checked' : ''} aria-label="Primary key"></td><td><input type="checkbox" data-i="${i}" data-k="nn" ${c.nn ? 'checked' : ''} aria-label="Not null"></td><td><input type="checkbox" data-i="${i}" data-k="uq" ${c.uq ? 'checked' : ''} aria-label="Unique"></td>
+      <td><input type="text" data-i="${i}" data-k="def" value="${esc(c.def)}" aria-label="Default"></td>
+      <td><select data-i="${i}" data-k="ref" aria-label="References"><option value="">—</option>${refs.map(r => `<option value="${esc(r.value)}" ${r.value === c.ref ? 'selected' : ''}>${esc(r.label)}</option>`).join('')}</select></td>
+      <td><button class="btn sm" data-rm="${i}" aria-label="Remove column">✕</button></td></tr>`).join('');
+    prev();
+  };
+  const prev = () => { $('#d-sql').textContent = designSql(des); };
+  const body = $('#dlg-body');
+  body.oninput = body.onchange = e => {
+    const el = e.target; if (el.id === 'd-name') { des.name = el.value; prev(); return; }
+    if (el.dataset.k === undefined) return; const c = des.cols[+el.dataset.i];
+    c[el.dataset.k] = el.type === 'checkbox' ? el.checked : el.value; prev();
+  };
+  body.onclick = e => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.rm !== undefined) { des.cols.splice(+b.dataset.rm, 1); draw(); } };
+  $('#d-add').onclick = () => { des.cols.push({ name: '', type: 'TEXT', pk: false, nn: false, uq: false, def: '', ref: '' }); draw(); };
+  $('#d-cancel').onclick = closeModal;
+  $('#d-go').onclick = () => {
+    if (!des.name.trim()) { $('#d-msg').textContent = 'Give the table a name.'; return; }
+    if (!des.cols.some(c => c.name.trim())) { $('#d-msg').textContent = 'Add at least one column.'; return; }
+    try { db.run(designSql(des)); scheduleSave(); const n = des.name.trim(); closeModal(); say(`Created table ${n}`); schemaChanged(); expanded.add(n); openTable(n); }
+    catch (e) { $('#d-msg').textContent = e.message; }
+  };
+  draw(); $('#d-name').focus();
+}
+$('#b-new').onclick = designerDialog;
+
+/* import */
+function parseCSV(text, delim = ',') {
+  const rows = []; let row = [], f = '', qt = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (qt) { if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else qt = false; } else f += c; }
+    else if (c === '"') qt = true;
+    else if (c === delim) { row.push(f); f = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(f); rows.push(row); row = []; f = ''; }
+    else f += c;
+  }
+  if (f !== '' || row.length) { row.push(f); rows.push(row); }
+  return rows.filter(r => r.some(x => x.trim() !== ''));
+}
+function detectDelim(text) { const line = text.split(/\r?\n/).find(l => l.trim()) || '', n = ch => line.split(ch).length; return n('\t') > n(',') && n('\t') >= n(';') ? '\t' : n(';') > n(',') ? ';' : ','; }
+function jsonToRows(text) {
+  let j = JSON.parse(text); if (!Array.isArray(j)) { const k = Object.keys(j).find(k => Array.isArray(j[k])); j = k ? j[k] : [j]; }
+  const keys = []; j.forEach(o => Object.keys(o || {}).forEach(k => { if (!keys.includes(k)) keys.push(k); }));
+  return [keys, ...j.map(o => keys.map(k => { const v = o?.[k]; return v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v); }))];
+}
+function textToRows(name, text) { text = text.replace(/^﻿/, ''); return /\.json$/i.test(name) || /^\s*[\[{]/.test(text) ? jsonToRows(text) : parseCSV(text, detectDelim(text)); }
+const impMsg = t => { const m = $('#import-msg'); if (m) m.textContent = t; say(t); };
+function importRows(name, rows) {
+  if (rows.length < 1) { impMsg(`${name} is empty`); return null; }
+  let table = name.replace(/[^A-Za-z0-9_]+/g, '_').replace(/^(\d)/, '_$1').toLowerCase() || 'imported';
+  const base = table; let k = 2; while (scalar(`SELECT 1 FROM sqlite_master WHERE name = ${lit(table)}`)) table = `${base}_${k++}`;
+  const header = rows[0].map((h, i) => h.trim() || `col${i + 1}`), data = rows.slice(1);
+  const types = header.map((_, i) => { const vals = data.map(r => (r[i] ?? '').trim()).filter(v => v !== ''); if (!vals.length) return 'TEXT'; if (vals.every(v => /^-?\d+$/.test(v))) return 'INTEGER'; if (vals.every(v => /^-?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(v))) return 'REAL'; return 'TEXT'; });
+  try {
+    db.run('BEGIN'); db.run(`CREATE TABLE ${q(table)} (${header.map((h, i) => `${q(h)} ${types[i]}`).join(', ')})`);
+    const st = db.prepare(`INSERT INTO ${q(table)} VALUES (${header.map(() => '?').join(',')})`);
+    for (const r of data) st.run(header.map((_, i) => { const v = (r[i] ?? '').trim(); return v === '' ? null : types[i] === 'TEXT' ? v : Number(v); }));
+    st.free(); db.run('COMMIT');
+  } catch (e) { try { db.run('ROLLBACK'); } catch { } impMsg('Import failed: ' + e.message); return null; }
+  return { table, count: data.length };
+}
+function finishImport(results) {
+  scheduleSave(); schemaChanged();
+  const ok = results.filter(Boolean); if (!ok.length) return;
+  impMsg('Loaded ' + ok.map(r => r.script ? r.script : `${r.table} (${r.count} rows)`).join(', '));
+  const last = ok.filter(r => r.table).pop(); if (last) { expanded.add(last.table); closeModal(); openTable(last.table); } else closeModal();
+}
+async function loadFiles(files) {
+  const results = [];
+  for (const file of files) {
+    try {
+      if (/\.(sqlite3?|db)$/i.test(file.name)) { db.close(); db = new SQL.Database(new Uint8Array(await file.arrayBuffer())); db.exec('SELECT 1 FROM sqlite_master'); db.run('PRAGMA foreign_keys = ON'); results.push({ script: file.name }); }
+      else {
+        const text = await file.text();
+        if (/\.sql$/i.test(file.name)) { const r = runStatements(text), e = r.find(x => x.error); if (e) { impMsg(`${file.name}: ${e.error}`); continue; } results.push({ script: file.name }); }
+        else results.push(importRows(file.name.replace(/\.[^.]+$/, ''), textToRows(file.name, text)));
+      }
+    } catch (e) { impMsg(`${file.name}: ${e.message}`); }
+  }
+  finishImport(results);
+}
+$('#b-import').onclick = () => {
+  openModal('Import data', `<p class="note">CSV, TSV and JSON files become tables named after the file (first row = column names, types guessed). A .sql file runs as a script. A .sqlite or .db file replaces the whole database.</p>
+    <div class="drop" id="drop">Drop files here or <label style="color:var(--accent);cursor:pointer;text-decoration:underline">choose files<input type="file" id="imp-file" multiple accept=".csv,.tsv,.txt,.json,.sql,.sqlite,.sqlite3,.db" hidden></label></div>
+    <div class="eyebrow">Or paste data</div>
+    <div class="row"><label class="l" style="flex:1;min-width:160px">Table name<input type="text" id="paste-name" value="my_data"></label></div>
+    <textarea class="field" id="paste-box" rows="6" spellcheck="false" placeholder="name,age,city&#10;Ana,31,Lisbon&#10;Ben,27,Oslo" style="font-family:var(--font-mono);font-size:12.5px;resize:vertical;width:100%"></textarea>
+    <div class="row"><button class="btn primary" id="paste-go">Create table from pasted data</button><button class="btn" id="imp-cancel">Cancel</button></div><p class="note" id="import-msg" role="status"></p>`);
+  $('#imp-cancel').onclick = closeModal;
+  $('#imp-file').onchange = e => { loadFiles([...e.target.files]); };
+  const drop = $('#drop');
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', e => loadFiles([...e.dataTransfer.files]));
+  $('#paste-go').onclick = () => {
+    const text = $('#paste-box').value.trim(); if (!text) { impMsg('Paste some data first.'); return; }
+    try { finishImport([importRows($('#paste-name').value.trim() || 'my_data', textToRows('paste', text))]); } catch (e) { impMsg('Could not read that: ' + e.message); }
+  };
+};
+
+/* export, samples */
+function dumpSql() {
+  const out = ['-- Sandbox database dump', 'BEGIN TRANSACTION;'];
+  const objs = rowsOf("SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 2 ELSE 3 END, name");
+  objs.filter(o => o[0] === 'table').forEach(o => out.push(o[2] + ';'));
+  objs.filter(o => o[0] === 'table').forEach(o => {
+    const rows = rowsOf(`SELECT * FROM ${q(o[1])}`); if (!rows.length) return;
+    const cols = tableInfo(o[1]).cols.map(c => q(c.name)).join(', ');
+    out.push('', `-- ${o[1]}: ${rows.length} rows`); rows.forEach(r => out.push(`INSERT INTO ${q(o[1])} (${cols}) VALUES (${r.map(lit).join(', ')});`));
+  });
+  const rest = objs.filter(o => o[0] !== 'table'); if (rest.length) { out.push(''); rest.forEach(o => out.push(o[2] + ';')); }
+  out.push('COMMIT;'); return out.join('\n');
+}
+$('#b-dump').onclick = () => { const s = dumpSql(); const t = newQuery(s, 'Dump'); say('Full database as SQL. Copy it to back up or move your data.'); copyText(s, 'Dump opened in a tab and copied to the clipboard'); };
+$('#b-sample').onclick = () => {
+  openModal('Sample databases', `<p class="note">Loading one replaces everything in the current database.</p>
+    <div class="choice"><button data-s="shop"><b>Shop & company</b><span>customers, products, orders, order_items, departments, employees. About 400 rows.</span></button>
+    <button data-s="library"><b>Library</b><span>authors, books, members, loans. A small set to learn joins on.</span></button>
+    <button data-s="empty"><b>Empty database</b><span>Start from nothing and create your own tables.</span></button></div><p class="note" id="sm-msg"></p>`);
+  $('#dlg-body').onclick = e => {
+    const b = e.target.closest('button[data-s]'); if (!b) return;
+    if (!b.dataset.sure) { document.querySelectorAll('#dlg-body button[data-s]').forEach(x => delete x.dataset.sure); b.dataset.sure = '1'; $('#sm-msg').textContent = 'This replaces all current tables. Click again to confirm.'; return; }
+    db.close(); db = new SQL.Database(); db.run('PRAGMA foreign_keys = ON');
+    if (b.dataset.s === 'shop') buildSample(); else if (b.dataset.s === 'library') buildLibrary();
+    scheduleSave(); expanded.clear(); closeModal(); schemaChanged(); say(`Loaded: ${b.querySelector('b').textContent}`);
+  };
+};
+
+/* ---------- boot ---------- */
+async function boot() {
+  SQL = await initSqlJs();
+  let restored = false;
+  try { const saved = await idbGet('db'); if (saved) { db = new SQL.Database(saved); db.exec('SELECT 1 FROM sqlite_master'); restored = true; } } catch { db = null; }
+  if (!restored) { try { const b64 = store.get('sqllab.db.v1'); if (b64) { const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); db = new SQL.Database(u); restored = true; } } catch { db = null; } }
+  if (!restored) { db = new SQL.Database(); db.run('PRAGMA foreign_keys = ON'); buildSample(); scheduleSave(); } else db.run('PRAGMA foreign_keys = ON');
+  $('#st-ver').textContent = 'SQLite ' + scalar('SELECT sqlite_version()');
+  say(restored ? 'Restored your saved database' : 'Loaded the sample shop & company database');
+  try { const s = JSON.parse(store.get('sbx.tabs') || 'null'); if (s && s.q.length) { s.q.forEach(x => tabs.push({ id: x.id, type: 'query', title: x.title, sql: x.sql, results: [], otab: 'results' })); nextId = s.n; qCounter = s.c; } } catch { }
+  if (!tabs.length) {
+    const hasCust = tableExists('customers');
+    tabs.push({ id: 't' + nextId++, type: 'query', title: 'Query ' + (++qCounter), results: [], otab: 'results', sql: `-- Write SQL here. Ctrl/⌘ + Enter runs it (or only the selected text).\n-- Click a table on the left to browse and edit its rows.\n\n${hasCust ? 'SELECT c.first_name, c.last_name, COUNT(o.id) AS orders\nFROM customers c\nLEFT JOIN orders o ON o.customer_id = c.id\nGROUP BY c.id\nORDER BY orders DESC\nLIMIT 10;' : "SELECT name, type FROM sqlite_master WHERE name NOT LIKE 'sqlite_%';"}` });
+  }
+  activeId = tabs[0].id; activate(activeId);
+  if (!restored && tableExists('customers')) runQuery();
+}
+boot().catch(e => { $('#outbody').innerHTML = `<div class="msgs"><div class="err">Couldn’t start SQLite: ${esc(e.message || e)}. Check your connection and reload.</div></div>`; });
+})();
+</script>
